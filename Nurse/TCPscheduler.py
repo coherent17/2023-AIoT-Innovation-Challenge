@@ -1,9 +1,8 @@
 import sys
-from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QTableWidget, QTableWidgetItem, QPushButton, QHeaderView, QMessageBox, QCheckBox
+from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QTableWidget, QTableWidgetItem, QPushButton, QHeaderView, QMessageBox, QCheckBox, QLabel
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
-from PyQt5.QtGui import QFont, QColor
+from PyQt5.QtGui import QFont, QColor, QIcon, QPixmap
 import socket
-
 
 class RoomScheduler(QWidget):
     def __init__(self):
@@ -141,6 +140,50 @@ class RoomScheduler(QWidget):
         self.table.setCellWidget(new_row, 4, delete_button)
 
 
+class WelcomePage(QWidget):
+    def __init__(self, scheduler):
+        super().__init__()
+        self.setWindowTitle("Welcome Page")
+        self.setWindowIcon(QIcon("icon.png"))
+        self.setStyleSheet("background-color: #333333;")
+
+        self.layout = QVBoxLayout(self)
+        self.layout.setAlignment(Qt.AlignCenter)
+
+        # Add Icon Label
+        icon_label = QLabel()
+        icon_label.setPixmap(QPixmap("icon.png"))
+        self.layout.addWidget(icon_label)
+
+        # Add Title Label
+        title_label = QLabel("Room Scheduler")
+        title_label.setStyleSheet("QLabel { color: white; font-size: 36px; font-weight: bold; }")
+        self.layout.addWidget(title_label)
+
+        # Add Subtitle Label
+        subtitle_label = QLabel("Efficient Room Management for Nurses")
+        subtitle_label.setStyleSheet("QLabel { color: #999999; font-size: 18px; }")
+        self.layout.addWidget(subtitle_label)
+
+        # Add Instructions Label
+        instructions_label = QLabel("Click the button below to access the scheduler.")
+        instructions_label.setStyleSheet("QLabel { color: white; font-size: 24px; }")
+        self.layout.addWidget(instructions_label)
+
+        # Add Enter Button
+        enter_button = QPushButton("Enter Scheduler")
+        enter_button.clicked.connect(scheduler.showMaximized)
+        enter_button.setStyleSheet("QPushButton { background-color: #555555; color: white; padding: 20px; border-radius: 10px; font-size: 24px; }"
+                                   "QPushButton:hover { background-color: #777777; }"
+                                   "QPushButton:pressed { background-color: #333333; }")
+        self.layout.addWidget(enter_button)
+
+        self.showFullScreen()
+
+    def enter_scheduler(self):
+        scheduler = RoomScheduler()
+        scheduler.showMaximized()
+        self.close()
 
 class TCPServer(QThread):
     task_received = pyqtSignal(str, str, str)
@@ -186,5 +229,6 @@ class TCPServer(QThread):
 if __name__ == '__main__':
     app = QApplication(sys.argv)
     scheduler = RoomScheduler()
-    scheduler.showMaximized()
+    welcome_page = WelcomePage(scheduler)
+    welcome_page.showMaximized()
     sys.exit(app.exec_())
