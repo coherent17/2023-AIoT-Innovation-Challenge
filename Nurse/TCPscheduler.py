@@ -1,8 +1,25 @@
 import sys
-from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QTableWidget, QTableWidgetItem, QPushButton, QHeaderView, QMessageBox, QLabel
-from PyQt5.QtCore import Qt, QThread, pyqtSignal
+from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QTableWidget, QTableWidgetItem, QPushButton, QHeaderView, QMessageBox, QLabel, QSplashScreen
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer
 from PyQt5.QtGui import QFont, QColor, QIcon, QPixmap
 import socket
+
+
+# Add a SplashPage class to display the splash screen
+class SplashPage(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("AlizaRing")
+        self.setWindowFlag(Qt.FramelessWindowHint)
+        self.setStyleSheet("background-color: #333333;")
+        self.layout = QVBoxLayout()
+        self.logo = QLabel()
+        self.logo.setPixmap(QPixmap("icon.png"))
+        self.layout.addWidget(self.logo, alignment=Qt.AlignCenter)
+        self.setLayout(self.layout)
+
+    def showEvent(self, event):
+        QTimer.singleShot(2000, self.close)
 
 class RoomScheduler(QWidget):
     def __init__(self):
@@ -194,7 +211,16 @@ class TCPServer(QThread):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+
+    # Create and show the splash screen
+    splash = QSplashScreen(QPixmap("icon.png"))
+    splash.show()
+
+    # Create the RoomScheduler widget
     window = RoomScheduler()
-    window.showMaximized()
+
+    # Close the splash screen and show the RoomScheduler after a delay
+    QTimer.singleShot(2000, splash.close)
+    QTimer.singleShot(2000, window.showMaximized)
+
     sys.exit(app.exec_())
-    
