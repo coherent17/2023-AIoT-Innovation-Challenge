@@ -1,7 +1,8 @@
 import sys
-from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QTableWidget, QTableWidgetItem, QPushButton, QHeaderView, QMessageBox, QLabel, QSplashScreen
+import configparser
+from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QTableWidget, QTableWidgetItem, QPushButton, QHeaderView, QMessageBox, QLabel, QSplashScreen,QInputDialog
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer
-from PyQt5.QtGui import QFont, QColor, QIcon, QPixmap
+from PyQt5.QtGui import QFont, QColor, QIcon, QPixmap,QPainter
 import socket
 
 
@@ -22,12 +23,16 @@ class SplashPage(QWidget):
         QTimer.singleShot(2000, self.close)
 
 class RoomScheduler(QWidget):
-    def __init__(self):
+    def __init__(self,name):
+        
+        #Basic layout
         super().__init__()
         self.setWindowTitle("Room Scheduler")
         self.setWindowFlag(Qt.FramelessWindowHint)
         self.setStyleSheet("background-color: #333333;")
         self.layout = QVBoxLayout()
+        
+        #Load the table
         self.table = QTableWidget()
         self.table.setSizeAdjustPolicy(QTableWidget.AdjustToContents)
         self.table.setColumnCount(5)  # Update column count
@@ -39,6 +44,15 @@ class RoomScheduler(QWidget):
         self.setLayout(self.layout)
         self.adjustSize()
         self.setFixedSize(self.size())
+        
+        ##Add config button
+        self.name = name
+        cfg_button = QPushButton("Setting Your Name")
+        cfg_button.clicked.connect(self.setup_name)
+        cfg_button.setStyleSheet("QPushButton { background-color: #555555; color: white; padding: 10px; border-radius: 5px; }"
+                                   "QPushButton:hover { background-color: #777777; }"
+                                   "QPushButton:pressed { background-color: #333333; }")
+        self.layout.addWidget(cfg_button, alignment=Qt.AlignLeft)
 
         # Add Exit Button
         exit_button = QPushButton("Exit")
@@ -47,12 +61,13 @@ class RoomScheduler(QWidget):
                                    "QPushButton:hover { background-color: #777777; }"
                                    "QPushButton:pressed { background-color: #333333; }")
         self.layout.addWidget(exit_button, alignment=Qt.AlignRight)
+        
 
         # Start TCP server
         self.tcp_server = TCPServer()
         self.tcp_server.task_received.connect(self.handle_received_task)
         self.tcp_server.start()
-
+        
     def load_rooms(self):
         # Simulated room data
         rooms = [
@@ -104,12 +119,12 @@ class RoomScheduler(QWidget):
             if state == "Not finished":
                 reply = QMessageBox.question(self, "Confirmation", "Do you want to take this task?", QMessageBox.Yes | QMessageBox.No)
                 if reply == QMessageBox.Yes:
-                    state_item.setText("Executed")
+                    state_item.setText("Executed by "+self.name)
                     button.setText("Delete Task")
                     button.setStyleSheet("QPushButton { background-color: #ff3333; color: white; padding: 6px 10px; border-radius: 5px; }"
                                          "QPushButton:hover { background-color: #ff5555; }"
                                          "QPushButton:pressed { background-color: #cc2222; }")
-            elif state == "Executed":
+            elif state == ("Executed by "+self.name):
                 reply = QMessageBox.question(self, "Confirmation", "Do you want to delete this task?", QMessageBox.Yes | QMessageBox.No)
                 if reply == QMessageBox.Yes:
                     self.table.removeRow(index)
@@ -168,7 +183,22 @@ class RoomScheduler(QWidget):
 
     def showEvent(self, event):
         self.activateWindow()
-
+    
+    def setup_name(self):
+        name, ok = QInputDialog.getText(self, "Setup Name", "Please enter your new name ")
+        if ok:
+            #update the event taken by user
+            for row in range(self.table.rowCount()):
+                old_text = self.table.item(row,3).text()
+                if(old_text=="Executed by "+self.name):
+                    self.table.item(row,3).setText("Executed by "+name) # change the name already shown on screen
+                
+            #modify the config file
+            self.name = name
+            file = open('name.cfg','w')
+            file.write(name)
+            file.close()              
+        
 class TCPServer(QThread):
     task_received = pyqtSignal(str, str, str)
 
@@ -210,6 +240,13 @@ class TCPServer(QThread):
             server_socket.close()
 
 if __name__ == "__main__":
+    
+    #Read cfg file and get the name
+    cfg_file = open('name.cfg','r')
+    name = cfg_file.readline()
+    cfg_file.close()
+    name.replace('\n','')
+    
     app = QApplication(sys.argv)
 
     # Create and show the splash screen
@@ -217,7 +254,7 @@ if __name__ == "__main__":
     splash.show()
 
     # Create the RoomScheduler widget
-    window = RoomScheduler()
+    window = RoomScheduler(name = name)
 
     # Close the splash screen and show the RoomScheduler after a delay
     QTimer.singleShot(2000, splash.close)
