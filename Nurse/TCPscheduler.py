@@ -29,7 +29,7 @@ class RoomScheduler(QWidget):
         super().__init__()
         self.setWindowTitle("Room Scheduler")
         self.setWindowFlag(Qt.FramelessWindowHint)
-        self.setStyleSheet("background-color: #333333;")
+        self.setStyleSheet("background-color: #666666;")
         self.layout = QVBoxLayout()
         
         #Load the table
