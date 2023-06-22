@@ -1,9 +1,12 @@
+#v1-1 update the basic logic behind the program
 import sys
 import configparser
 from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QTableWidget, QTableWidgetItem, QPushButton, QHeaderView, QMessageBox, QLabel, QSplashScreen,QInputDialog
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer
 from PyQt5.QtGui import QFont, QColor, QIcon, QPixmap,QPainter
 import socket
+import time
+from emerdencyTable import emergency_dictionary
 
 
 # Add a SplashPage class to display the splash screen
@@ -27,27 +30,29 @@ class RoomScheduler(QWidget):
         
         #Basic layout
         super().__init__()
-        self.setWindowTitle("Room Scheduler")
+        self.setWindowTitle("聽~紅鈴的聲音")
         self.setWindowFlag(Qt.FramelessWindowHint)
-        self.setStyleSheet("background-color: #666666;")
+        self.setStyleSheet("background-color: #efefef;")
         self.layout = QVBoxLayout()
         
+        #Add buttom for switching event list
+        #initially, we print the unfinished event
+        self.main_button = QPushButton("切換為 已完成事件")
+        self.main_button.setStyleSheet("QPushButton { background-color: #555555; color: white; padding: 10px; border-radius: 5px; }"
+                                   "QPushButton:hover { background-color: #777777; }"
+                                   "QPushButton:pressed { background-color: #333333; }")
+        self.main_button.clicked.connect(self.swich_event_list)
+        self.layout.addWidget(self.main_button, alignment=Qt.AlignLeft)
+
         #Load the table
-        self.table = QTableWidget()
-        self.table.setSizeAdjustPolicy(QTableWidget.AdjustToContents)
-        self.table.setColumnCount(5)  # Update column count
-        self.table.horizontalHeader().setStyleSheet("QHeaderView::section { background-color: #222222; color: white; }")
-        self.table.horizontalHeader().setFont(QFont("Arial", 12, QFont.Bold))
-        self.table.setHorizontalHeaderLabels(["Room", "Event", "Emergency", "State", "Action"])  # Remove "Select"
-        self.layout.addWidget(self.table)
-        self.load_rooms()
-        self.setLayout(self.layout)
-        self.adjustSize()
-        self.setFixedSize(self.size())
-        
+        self.set_unfinished_event()
+        self.set_finished_event()
+        self.table = QTableWidget() 
+        self.set_table()#set the config of table
+
         ##Add config button
         self.name = name
-        cfg_button = QPushButton("Setting Your Name")
+        cfg_button = QPushButton("設定姓名")
         cfg_button.clicked.connect(self.setup_name)
         cfg_button.setStyleSheet("QPushButton { background-color: #555555; color: white; padding: 10px; border-radius: 5px; }"
                                    "QPushButton:hover { background-color: #777777; }"
@@ -55,54 +60,112 @@ class RoomScheduler(QWidget):
         self.layout.addWidget(cfg_button, alignment=Qt.AlignLeft)
 
         # Add Exit Button
-        exit_button = QPushButton("Exit")
+        exit_button = QPushButton("退出")
         exit_button.clicked.connect(self.exit_application)
         exit_button.setStyleSheet("QPushButton { background-color: #555555; color: white; padding: 10px; border-radius: 5px; }"
                                    "QPushButton:hover { background-color: #777777; }"
                                    "QPushButton:pressed { background-color: #333333; }")
         self.layout.addWidget(exit_button, alignment=Qt.AlignRight)
         
-
         # Start TCP server
         self.tcp_server = TCPServer()
         self.tcp_server.task_received.connect(self.handle_received_task)
         self.tcp_server.start()
+    def set_unfinished_event(self):
         
-    def load_rooms(self):
-        # Simulated room data
-        rooms = [
-            {'number': 'Room 101', 'event': 'Heart Attack', 'emergency': 4},
-            {'number': 'Room 102', 'event': 'Fractured Arm', 'emergency': 2},
-            {'number': 'Room 103', 'event': 'Stroke', 'emergency': 4},
-            {'number': 'Room 104', 'event': 'Fever', 'emergency': 1},
-            {'number': 'Room 105', 'event': 'Allergic Reaction', 'emergency': 3},
+        #initialize and sort the unfinished event list for demo
+        #the unfinished event will be sorted by emergency
+        self.unfinished_event = [
+            {'number': '101房', 'event': '什麼時候出院', 'emergency': 4,'timestamp':None,"executer":None,"status":'unexecuted'},
+            {'number': '102房', 'event': '打胰島素', 'emergency': 2,'timestamp':None,"executer":None,"status":'unexecuted'},
+            {'number': '103房', 'event': '衛生紙', 'emergency': 4,'timestamp':None,"executer":None,"status":'unexecuted'},
+            {'number': '104房', 'event': '很喘', 'emergency': 1,'timestamp':None,"executer":None,"status":'unexecuted'},
+            {'number': '105房', 'event': '尿袋', 'emergency': 3,'timestamp':None,"executer":None,"status":'unexecuted'},
         ]
+        self.unfinished_event = sorted(self.unfinished_event, key=lambda x: x['emergency'])
+        
+    def set_finished_event(self):
+        #initialize and sort the finished event list for demo
+        #the unfinished event will be sorted by timestamp
+        self.finished_event = [
+            {'number': '106房', 'event': '飯還沒來', 'emergency': 4,'timestamp':time.time()-10000,"executer":"柯祈因","status":'executed'},
+        ]
+        
+    def set_table(self):#setting layout of the table to be printed in the middle of the surface
+        self.table.setSizeAdjustPolicy(QTableWidget.AdjustToContents)
+        self.table.setColumnCount(5) 
+        self.table.horizontalHeader().setStyleSheet("QHeaderView::section { background-color: #222222; color: white; }")
+        self.table.horizontalHeader().setFont(QFont("Microsoft YaHei", 12, QFont.Bold))
+        self.table.setHorizontalHeaderLabels(["床號", "事件種類", "緊急程度", "處理情形", "操作"])
+        self.layout.addWidget(self.table)
+        
+        self.setLayout(self.layout)
+        self.adjustSize()
+        self.setFixedSize(self.size())
+    
+        self.set_printed_event_list(self.unfinished_event)
+        
+    def handle_received_task(self, room, event, emergency):
+        # Create a new row in the table for the received task
+        new_row = self.table.rowCount()
+        self.unfinished_event.append({'number': str(room)+'房', 'event': event, 'emergency': int(emergency),'timestamp':None,"executer":None,"status":'unexecuted'})
+        self.unfinished_event = sorted(self.unfinished_event, key=lambda x: x['emergency'])
+        
+        
+        if self.main_button.text() == "切換為 已完成事件":#update the event in real time
+            self.set_printed_event_list(self.unfinished_event)
+        # Find the index to insert the new task based on emergency level
 
-        sorted_rooms = sorted(rooms, key=lambda x: x['emergency'], reverse=True)  # Sort by emergency state in descending order
-
-        self.table.setRowCount(len(sorted_rooms))
-        for i, room in enumerate(sorted_rooms):
-            room_item = QTableWidgetItem(room['number'])
-            room_item.setForeground(QColor(200, 200, 200))
-            event_item = QTableWidgetItem(room['event'])
-            event_item.setForeground(QColor(200, 200, 200))
-            emergency_item = QTableWidgetItem(str(room['emergency']))
-            emergency_item.setForeground(QColor(200, 200, 200))
-            state_item = QTableWidgetItem("Not finished")
-            state_item.setForeground(QColor(200, 200, 200))
-
-            action_button = QPushButton("Take Task")
-            action_button.clicked.connect(self.execute_task)
-            action_button.setProperty("index", i)  # Set custom property to store the row index
-            action_button.setStyleSheet("QPushButton { background-color: green; color: white; padding: 6px 10px; border-radius: 5px; }"
+    def swich_event_list(self):
+        if self.main_button.text()=="切換為 已完成事件":
+            self.main_button.setText("切換為 紅鈴動態")
+            self.set_printed_event_list(self.finished_event)
+        else: #"切換為 紅鈴動態"
+            self.main_button.setText("切換為 已完成事件")
+            self.set_printed_event_list(self.unfinished_event)
+    
+    def set_printed_event_list(self,event_list:list):
+        #event_list is always an sorted array
+        self.table.setRowCount(0)
+        self.table.setRowCount(len(event_list))
+        for i, event in enumerate(event_list):
+            room_item = QTableWidgetItem(event['number'])
+            room_item.setForeground(QColor(0, 0, 0)) #1st column
+            event_item = QTableWidgetItem(event['event'])
+            event_item.setForeground(QColor(0, 0, 0))#2nd column
+            emergency_item = QTableWidgetItem(str(event['emergency']))
+            emergency_item.setForeground(QColor(0, 0, 0))#3rd column
+            
+            state_item = QTableWidgetItem("未執行")
+            
+            action = QPushButton("我要處理")
+            action.clicked.connect(self.execute_task)
+            action.setProperty("index", i)
+            action.setStyleSheet("QPushButton { background-color: green; color: white; padding: 6px 10px; border-radius: 5px; }"
                                          "QPushButton:hover { background-color: #777777; }"
                                          "QPushButton:pressed { background-color: #333333; }")
+            if event['status']=='executing':
+                state_item = QTableWidgetItem(event['executer']+' 執行中')
+                action.setText("結束執行")
+                action.setStyleSheet("QPushButton { background-color: #ff3333; color: white; padding: 6px 10px; border-radius: 5px; }"
+                                         "QPushButton:hover { background-color: #777777; }"
+                                         "QPushButton:pressed { background-color: #333333; }")
+            elif event['status']=='executed':
+                state_item = QTableWidgetItem(event['executer']+' 已完成')
+                action = QTableWidgetItem('已完成事件') #the finished tasks cannot be further delete or other action
+                
+                #action.setStyleSheet("background-color: green")
+            
+            state_item.setForeground(QColor(0, 0, 0))
 
             self.table.setItem(i, 0, room_item)
             self.table.setItem(i, 1, event_item)
             self.table.setItem(i, 2, emergency_item)
             self.table.setItem(i, 3, state_item)
-            self.table.setCellWidget(i, 4, action_button)  # Adjust column index
+            if event['status']=='executed':
+                self.table.setItem(i, 4, action)
+            else:
+                self.table.setCellWidget(i, 4, action) 
 
         # Expand rows and columns
         self.table.verticalHeader().setDefaultSectionSize(50)
@@ -110,94 +173,57 @@ class RoomScheduler(QWidget):
         self.table.verticalHeader().setVisible(False)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
 
-    def execute_task(self):
+    def execute_task(self):#**need modification
         button = self.sender()
         index = button.property("index")  # Get the stored row index
-        if index is not None:
-            state_item = self.table.item(index, 3)
-            state = state_item.text()
-            if state == "Not finished":
-                reply = QMessageBox.question(self, "Confirmation", "Do you want to take this task?", QMessageBox.Yes | QMessageBox.No)
+        if index is not None:     
+            
+            if self.unfinished_event[index]['status'] == "unexecuted": #change the state of specific event
+                reply = QMessageBox.question(self, "確認", "確定處理此事件?", QMessageBox.Yes | QMessageBox.No)
                 if reply == QMessageBox.Yes:
-                    state_item.setText("Executed by "+self.name)
-                    button.setText("Delete Task")
-                    button.setStyleSheet("QPushButton { background-color: #ff3333; color: white; padding: 6px 10px; border-radius: 5px; }"
-                                         "QPushButton:hover { background-color: #ff5555; }"
-                                         "QPushButton:pressed { background-color: #cc2222; }")
-            elif state == ("Executed by "+self.name):
-                reply = QMessageBox.question(self, "Confirmation", "Do you want to delete this task?", QMessageBox.Yes | QMessageBox.No)
+                    self.unfinished_event[index]['executer'] = self.name
+                    self.unfinished_event[index]['status'] = 'executing'
+                    
+            elif self.unfinished_event[index]['executer'] == self.name:
+                reply = QMessageBox.question(self, "確認", "確定刪除此事件?", QMessageBox.Yes | QMessageBox.No)
                 if reply == QMessageBox.Yes:
-                    self.table.removeRow(index)
-                    # Update the stored row index in action buttons
-                    for row in range(self.table.rowCount()):
-                        action_button = self.table.cellWidget(row, 4)  # Adjust column index
-                        action_button.setProperty("index", row)
+                    self.unfinished_event[index]['status'] = 'executed'
+                    self.unfinished_event[index]['timestamp'] = time.time()
+                    event = self.unfinished_event[index]
+                    self.unfinished_event.pop(index)
+                    self.finished_event.insert(0,event)
+                    
+            else: #the executer is not user
+                QMessageBox.information(self,"警告","無法刪除他人執行的事件!!")
+        self.set_printed_event_list(self.unfinished_event)
 
     def exit_application(self):
         QApplication.quit()
 
-    def handle_received_task(self, room, event, emergency):
-        # Create a new row in the table for the received task
-        new_row = self.table.rowCount()
-
-        # Find the index to insert the new task based on emergency level
-        for row in range(self.table.rowCount()):
-            current_emergency_item = self.table.item(row, 2)
-            current_emergency = int(current_emergency_item.text())
-            if int(emergency) > current_emergency:
-                new_row = row
-                break
-
-        self.table.insertRow(new_row)
-
-        room_item = QTableWidgetItem(room)
-        room_item.setForeground(QColor(200, 200, 200))
-        event_item = QTableWidgetItem(event)
-        event_item.setForeground(QColor(200, 200, 200))
-        emergency_item = QTableWidgetItem(emergency)
-        emergency_item.setForeground(QColor(200, 200, 200))
-        state_item = QTableWidgetItem("Not finished")
-        state_item.setForeground(QColor(200, 200, 200))
-
-        action_button = QPushButton("Take Task")
-        action_button.clicked.connect(self.execute_task)
-        action_button.setProperty("index", new_row)  # Set custom property to store the row index
-        action_button.setStyleSheet("QPushButton { background-color: #555555; color: white; padding: 6px 10px; border-radius: 5px; }"
-                                    "QPushButton:hover { background-color: #777777; }"
-                                    "QPushButton:pressed { background-color: #333333; }")
-
-        self.table.setItem(new_row, 0, room_item)
-        self.table.setItem(new_row, 1, event_item)
-        self.table.setItem(new_row, 2, emergency_item)
-        self.table.setItem(new_row, 3, state_item)
-        self.table.setCellWidget(new_row, 4, action_button)  # Adjust column index
-
-        # Update the stored row index in action buttons
-        for row in range(self.table.rowCount()):
-            action_button = self.table.cellWidget(row, 4)  # Adjust column index
-            action_button.setProperty("index", row)
-
-        # Highlight the new row
-        for column in range(self.table.columnCount()):
-            item = self.table.item(new_row, column)
-
     def showEvent(self, event):
         self.activateWindow()
     
-    def setup_name(self):
-        name, ok = QInputDialog.getText(self, "Setup Name", "Please enter your new name ")
+    def setup_name(self):#**need modification
+        name, ok = QInputDialog.getText(self, "設定姓名", "請輸入新名字")
         if ok:
-            #update the event taken by user
-            for row in range(self.table.rowCount()):
-                old_text = self.table.item(row,3).text()
-                if(old_text=="Executed by "+self.name):
-                    self.table.item(row,3).setText("Executed by "+name) # change the name already shown on screen
+            #update the executer of all events
+            for index,_ in enumerate(self.unfinished_event):
+                if self.unfinished_event[index]['executer'] == self.name:
+                    self.unfinished_event[index]['executer'] = name
+            for index,event in enumerate(self.finished_event):
+                if self.finished_event[index]['executer'] == self.name:
+                    self.finished_event[index]['executer'] = name   
                 
             #modify the config file
             self.name = name
             file = open('name.cfg','w')
             file.write(name)
-            file.close()              
+            file.close()
+            
+            if self.main_button.text()=="切換為 已完成事件":
+                self.set_printed_event_list(self.unfinished_event)
+            else: #"切換為 紅鈴動態"
+                self.set_printed_event_list(self.finished_event)        
         
 class TCPServer(QThread):
     task_received = pyqtSignal(str, str, str)
