@@ -7,6 +7,7 @@ from PyQt5.QtGui import QFont, QColor, QIcon, QPixmap,QPainter
 import socket
 import time
 from emerdencyTable import emergency_dictionary
+import threading
 
 
 # Add a SplashPage class to display the splash screen
@@ -224,46 +225,86 @@ class RoomScheduler(QWidget):
                 self.set_printed_event_list(self.unfinished_event)
             else: #"切換為 紅鈴動態"
                 self.set_printed_event_list(self.finished_event)        
-        
+
+
+class KeyboardThread(threading.Thread):
+
+    def __init__(self, input_cbk = None, name='keyboard-input-thread'):
+        self.input_cbk = input_cbk
+        super(KeyboardThread, self).__init__(name=name)
+        self.start()
+
+    def run(self):
+        while True:
+            self.input_cbk(input()) #waits to get input + Return
+
 class TCPServer(QThread):
     task_received = pyqtSignal(str, str, str)
 
     def run(self):
-        SERVER_IP = 'localhost'
-        SERVER_PORT = 12345
+        host = socket.gethostbyname(socket.gethostname())  # IP address of the TCP server
+        port = 50007                                       # Arbitrary non-privileged port
+        RECV_BUFF_SIZE = 4096                              # Receive buffer size
+        DEFAULT_KEEP_ALIVE = 1                             # TCP Keep Alive: 1 - Enable, 0 - Disable
 
         # Create a TCP socket
         server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
+        # set TCP Keepalive parameters
+        server_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 10)
+        server_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, 1)
+        server_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 2)
+        server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, DEFAULT_KEEP_ALIVE)
+
+        # variable to identify if there is an active client connection
+        is_client_connected = False
+
         try:
             # Bind the socket to a specific address and port
-            server_socket.bind((SERVER_IP, SERVER_PORT))
-
-            # Listen for incoming connections
+            server_socket.bind((host, port))
             server_socket.listen(1)
-            print(f"Server listening on {SERVER_IP}:{SERVER_PORT}")
+        except socket.error as msg:
+                print("ERROR: ", msg)
+                server_socket.close()
+                server_socket = None
+        
+        if server_socket is None:
+            sys.exit(1)
+        
+        while True:
+            try:
+                is_client_connected = False
+                print("Listening on: IPv4 Address: %s Port: %d"%(host, port))
+                conn, addr = server_socket.accept()
+                is_client_connected = True
+            
+            except KeyboardInterrupt:
+                print("Closing Connection")
+                server_socket.close()
+                server_socket = None
+                sys.exit(1)
+
+
+            print('Incoming connection accepted: ', addr)
 
             while True:
-                # Accept a client connection
-                client_socket, client_address = server_socket.accept()
-                print(f"Connection established with {client_address[0]}:{client_address[1]}")
-
-                # Receive data from the client
-                data = client_socket.recv(1024).decode()
-
-                # Process the received data
-                if data:
-                    room, event, emergency = data.split(',')
-                    self.task_received.emit(room, event, emergency)
-
-                # Close the client socket
-                client_socket.close()
-
-        except OSError as e:
-            print(f"Error: {e}")
-        finally:
-            # Close the server socket
-            server_socket.close()
+                try:
+                    
+                    data = conn.recv(RECV_BUFF_SIZE)
+                    if not data: break
+                    print("Acknowledgement from TCP Client:", data.decode('utf-8'))
+                    print("")
+                    self.task_received.emit('601', data.decode('utf-8'), str(emergency_dictionary[data.decode('utf-8')]))
+                    
+                except socket.error:
+                    print("Timeout Error! TCP Client connection closed")
+                    break
+                    
+                except KeyboardInterrupt:
+                    print("Closing Connection")
+                    server_socket.close()
+                    server_socket = None
+                    sys.exit(1)    
 
 if __name__ == "__main__":
     
