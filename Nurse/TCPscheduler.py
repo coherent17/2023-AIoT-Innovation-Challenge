@@ -242,6 +242,7 @@ class TCPServer(QThread):
     task_received = pyqtSignal(str, str, str)
 
     def run(self):
+        #host = '172.20.10.4'                               # IP for Raspberry Pi
         host = socket.gethostbyname(socket.gethostname())  # IP address of the TCP server
         port = 50007                                       # Arbitrary non-privileged port
         RECV_BUFF_SIZE = 4096                              # Receive buffer size
